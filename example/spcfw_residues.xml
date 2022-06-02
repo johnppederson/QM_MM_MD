@@ -3,7 +3,7 @@
    <Atom name="O" type="spce-O"/>
    <Atom name="H1" type="spce-H"/>
    <Atom name="H2" type="spce-H"/>
-  <Bond from="O" to="H1"/>
-  <Bond from="O" to="H2"/>
+   <Bond from="O" to="H1"/>
+   <Bond from="O" to="H2"/>
   </Residue>
 </Residues>

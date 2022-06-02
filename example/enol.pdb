@@ -1,0 +1,30 @@
+CRYST1   82.398   82.398   82.398  90.00  90.00  90.00 P 1           1 
+HETATM    1  O00 UNK A   1       1.000   1.000   0.000  1.00  0.00           O
+HETATM    2  C01 UNK A   1      -0.366   1.000   0.000  1.00  0.00           C
+HETATM    3  C02 UNK A   1      -1.067   1.000   1.135  1.00  0.00           C
+HETATM    4  C03 UNK A   1      -2.570   1.002   1.185  1.00  0.00           C
+HETATM    5  C04 UNK A   1      -3.123   2.233   1.901  1.00  0.00           C
+HETATM    6  O05 UNK A   1      -2.814   3.425   1.185  1.00  0.00           O
+HETATM    7  H06 UNK A   1       1.304   0.999  -0.926  1.00  0.00           H
+HETATM    8  H07 UNK A   1      -0.806   1.001  -0.991  1.00  0.00           H
+HETATM    9  H08 UNK A   1      -0.532   0.998   2.082  1.00  0.00           H
+HETATM   10  H09 UNK A   1      -2.900   0.099   1.711  1.00  0.00           H
+HETATM   11  H0A UNK A   1      -2.980   0.961   0.168  1.00  0.00           H
+HETATM   12  H0B UNK A   1      -2.728   2.323   2.919  1.00  0.00           H
+HETATM   13  H0C UNK A   1      -4.213   2.162   1.966  1.00  0.00           H
+HETATM   14  H0D UNK A   1      -1.842   3.485   1.140  1.00  0.00           H
+TER
+CONECT    1    2
+CONECT    2    3
+CONECT    3    4
+CONECT    4    5
+CONECT    5    6
+CONECT    1    7
+CONECT    2    8
+CONECT    3    9
+CONECT    4   10
+CONECT    4   11
+CONECT    5   12
+CONECT    5   13
+CONECT    6   14
+END

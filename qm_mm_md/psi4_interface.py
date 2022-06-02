@@ -136,10 +136,17 @@ class Psi4Interface:
         if self.wfn and self.read_guess:
             self.wfn.to_file(self.wfn.get_scratch_filename(180))
             psi4.core.set_local_option('SCF', 'GUESS', 'READ')
-        (psi4_energy, psi4_wfn) = psi4.energy(self.dft_functional,
-                                              return_wfn=True,
-                                              external_potentials=self.chargefield)
-        psi4_forces = psi4.gradient(self.dft_functional,external_potentials=self.chargefield)
+        if len(self.chargefield) == 0:
+            (psi4_energy, psi4_wfn) = psi4.energy(self.dft_functional,
+                                                  return_wfn=True)
+            psi4_forces = psi4.gradient(self.dft_functional, ref_wfn=psi4_wfn)
+        else:
+            (psi4_energy, psi4_wfn) = psi4.energy(self.dft_functional,
+                                                  return_wfn=True,
+                                                  external_potentials=self.chargefield)
+            psi4_forces = psi4.gradient(self.dft_functional,
+                                        external_potentials=self.chargefield,
+                                        ref_wfn=psi4_wfn)
         self.wfn = psi4_wfn
         # Convert energy to kJ/mol and forces to kJ/mol/Angstrom
         #psi4_energy = (psi4_energy - self._ground_state_energy)*2625.5

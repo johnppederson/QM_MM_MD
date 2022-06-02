@@ -1,0 +1,44 @@
+<Residues>
+ <Residue name="UNK">
+  <Atom name="O00" type="opls_800"/>
+  <Atom name="C01" type="opls_801"/>
+  <Atom name="C02" type="opls_802"/>
+  <Atom name="C03" type="opls_803"/>
+  <Atom name="C04" type="opls_804"/>
+  <Atom name="O05" type="opls_805"/>
+  <Atom name="H06" type="opls_806"/>
+  <Atom name="H07" type="opls_807"/>
+  <Atom name="H08" type="opls_808"/>
+  <Atom name="H09" type="opls_809"/>
+  <Atom name="H0A" type="opls_810"/>
+  <Atom name="H0B" type="opls_811"/>
+  <Atom name="H0C" type="opls_812"/>
+  <Atom name="H0D" type="opls_813"/>
+  <Bond from="0" to="1"/>
+  <Bond from="1" to="2"/>
+  <Bond from="2" to="3"/>
+  <Bond from="3" to="4"/>
+  <Bond from="4" to="5"/>
+  <Bond from="0" to="6"/>
+  <Bond from="1" to="7"/>
+  <Bond from="2" to="8"/>
+  <Bond from="3" to="9"/>
+  <Bond from="3" to="10"/>
+  <Bond from="4" to="11"/>
+  <Bond from="4" to="12"/>
+  <Bond from="5" to="13"/>
+  <!--<Bond from="O00" to="C01"/>
+  <Bond from="C01" to="C02"/>
+  <Bond from="C02" to="C03"/>
+  <Bond from="C03" to="C04"/>
+  <Bond from="C04" to="O05"/>
+  <Bond from="O00" to="H06"/>
+  <Bond from="C01" to="H07"/>
+  <Bond from="C02" to="H08"/>
+  <Bond from="C03" to="H09"/>
+  <Bond from="C03" to="H0A"/>
+  <Bond from="C04" to="H0B"/>
+  <Bond from="C04" to="H0C"/>
+  <Bond from="O05" to="H0D"/>-->
+ </Residue>
+</Residues>

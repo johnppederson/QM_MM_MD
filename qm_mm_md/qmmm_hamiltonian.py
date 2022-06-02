@@ -87,37 +87,39 @@ class QMMMHamiltonian(ase.calculators.calculator.Calculator):
         self.openmm_interface.delr_vector_list = self.delr_vector_list
         openmm_energy, openmm_forces = self.openmm_interface.compute_energy()
         psi4_energy, psi4_forces = self.psi4_interface.compute_energy()
-        qm_forces = psi4_forces[0:len(self.qm_atoms_list),:]
-        em_forces = psi4_forces[len(self.qm_atoms_list):,:]
+        #qm_forces = psi4_forces[0:len(self.qm_atoms_list),:]
+        #em_forces = psi4_forces[len(self.qm_atoms_list):,:]
         # Add Psi4 electrostatic forces and energy onto OpenMM forces
         # and energy for QM atoms.
-        for i, qm_force in zip(self.qm_atoms_list, qm_forces):
-            for j in range(3):
-                openmm_forces[i,j] += qm_force[j]
+        #for i, qm_force in zip(self.qm_atoms_list, qm_forces):
+        #    for j in range(3):
+        #        openmm_forces[i,j] += qm_force[j]
         # Remove double-counting from embedding forces and energy.
-        j = 0
-        for residue, offset in zip(self.embedding_list, self.delr_vector_list):
-            for atom in residue:
-                print(len(self.embedding_list)*3)
-                co_forces = [0,0,0]
-                for i in self.qm_atoms_list:
-                    x = -atoms.positions[atom][0] + offset[0]
-                    y = -atoms.positions[atom][1] + offset[1]
-                    z = -atoms.positions[atom][2] + offset[2]
-                    dr = (x**2 + y**2 + z**2)**0.5
-                    q_prod = atoms.charges[i] * atoms.charges[atom]
-                    co_forces[0] += 1.88973 * 2625.5 * x * q_prod * dr**-3
-                    co_forces[1] += 1.88973 * 2625.5 * y * q_prod * dr**-3
-                    co_forces[2] += 1.88973 * 2625.5 * z * q_prod * dr**-3
-                    openmm_energy -= 2625.5 * q_prod * dr**-1
-                for i in range(3):
-                    openmm_forces[atom,i] += em_forces[j][i]
-                    openmm_forces[atom,i] -= co_forces[i]
-                j += 1
-        openmm_energy += psi4_energy
+        #j = 0
+        #for residue, offset in zip(self.embedding_list, self.delr_vector_list):
+        #    for atom in residue:
+        #        print(len(self.embedding_list)*3)
+        #        co_forces = [0,0,0]
+        #        for i in self.qm_atoms_list:
+        #            x = -atoms.positions[atom][0] + offset[0]
+        #            y = -atoms.positions[atom][1] + offset[1]
+        #            z = -atoms.positions[atom][2] + offset[2]
+        #            dr = (x**2 + y**2 + z**2)**0.5
+        #            q_prod = atoms.charges[i] * atoms.charges[atom]
+        #            co_forces[0] += 1.88973 * 2625.5 * x * q_prod * dr**-3
+        #            co_forces[1] += 1.88973 * 2625.5 * y * q_prod * dr**-3
+        #            co_forces[2] += 1.88973 * 2625.5 * z * q_prod * dr**-3
+        #            openmm_energy -= 2625.5 * q_prod * dr**-1
+        #        for i in range(3):
+        #            openmm_forces[atom,i] += em_forces[j][i]
+        #            openmm_forces[atom,i] -= co_forces[i]
+        #        j += 1
+        #openmm_energy += psi4_energy
         self.frame += 1
-        result["energy"] = openmm_energy * self.energy_units
-        result["forces"] = openmm_forces * self.forces_units
+        #result["energy"] = openmm_energy * self.energy_units
+        #result["forces"] = openmm_forces * self.forces_units
+        result["energy"] = psi4_energy * self.energy_units
+        result["forces"] = psi4_forces * self.forces_units
         self.results = result
 
     def make_molecule_whole(self, position_array, box):
