@@ -3,6 +3,7 @@
 """
 Psi4 interface to model the QM subsystem of the QM/MM system.
 """
+import sys
 import numpy as np
 import psi4
 import psi4.core
@@ -37,7 +38,7 @@ class Psi4Interface:
 
     def __init__(self, basis_set, functional, quadrature_spherical,
                  quadrature_radial, qm_charge, qm_spin, n_threads=1,
-                 read_guess=True):
+                 read_guess=False):
         self.basis = basis_set
         self.dft_functional = functional
         self.dft_spherical_points = quadrature_spherical
@@ -79,15 +80,13 @@ class Psi4Interface:
         if self.qm_spin > 1:
            psi4.core.set_local_option('SCF', 'REFERENCE', 'UKS')
         # Set the field of electrostatically embedded charges.
-        charge_field = psi4.QMMM()
+        chargefield = []
         for residue, offset in zip(embedding_list, offsets):
             for atom in residue:
-                position = [positions[atom,k] + offset[k] for k in range(3)]
-                charge_field.extern.addCharge(self._charges[atom],
-                                              position[0],
-                                              position[1],
-                                              position[2])
-        psi4.core.set_global_option_python('EXTERN', charge_field.extern)
+                position = [(positions[atom,k] + offset[k])*1.88973 for k in range(3)]
+                chargefield.append([self._charges[atom],[position[0],position[1],position[2]]])
+        self.chargefield = chargefield
+        #psi4.core.set_global_option('PRINT', 5)
         # Construct geometry string.
         geometrystring = ' \n '
         geometrystring = (geometrystring + str(self.qm_charge) + " " 
@@ -115,8 +114,8 @@ class Psi4Interface:
         position_array : Numpy array
             Array of atom positions from the ASE Atoms object.
         """
-        self.generate_geometry([], [], positions[self._qm_atoms_list])
-        self.set_ground_state_energy(psi4.optimize(self.dft_functional))
+        self.generate_geometry([], [], positions)
+        #self.set_ground_state_energy(psi4.optimize(self.dft_functional))
 
     def compute_energy(self):
         """
@@ -138,11 +137,13 @@ class Psi4Interface:
             self.wfn.to_file(self.wfn.get_scratch_filename(180))
             psi4.core.set_local_option('SCF', 'GUESS', 'READ')
         (psi4_energy, psi4_wfn) = psi4.energy(self.dft_functional,
-                                              return_wfn=True)
-        psi4_forces = psi4.gradient(self.dft_functional)
+                                              return_wfn=True,
+                                              external_potentials=self.chargefield)
+        psi4_forces = psi4.gradient(self.dft_functional,external_potentials=self.chargefield)
         self.wfn = psi4_wfn
         # Convert energy to kJ/mol and forces to kJ/mol/Angstrom
-        psi4_energy = (psi4_energy - self._ground_state_energy)*2625.5
+        #psi4_energy = (psi4_energy - self._ground_state_energy)*2625.5
+        psi4_energy = psi4_energy*2625.5
         psi4_forces = -np.asarray(psi4_forces)*2625.5*1.88973
         return psi4_energy, psi4_forces
 

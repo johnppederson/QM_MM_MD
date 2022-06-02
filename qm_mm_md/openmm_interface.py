@@ -256,6 +256,18 @@ class OpenMMInterface:
         self.custom_nonbonded_force = [f for f in [self.system_mm.getForce(i)
                                        for i in range(self.system_mm.getNumForces())]
                                        if type(f) == openmm.CustomNonbondedForce]
+        for i in range(self.harmonic_bond_force.getNumBonds()):
+            p1, p2, r0, k = self.harmonic_bond_force.getBondParameters(i)
+            if p1 in self._qm_atoms_list or p2 in self._qm_atoms_list:
+                k = simtk.unit.Quantity(0, unit=k.unit)
+                self.harmonic_bond_force.setBondParameters(i, p1, p2, r0, k)
+        self.harmonic_bond_force.updateParametersInContext(self.simmd_mm.context)
+        for i in range(self.harmonic_angle_force.getNumAngles()):
+            p1, p2, p3, r0, k = self.harmonic_angle_force.getAngleParameters(i)
+            if p1 in self._qm_atoms_list or p2 in self._qm_atoms_list or p3 in self._qm_atoms_list:
+                k = simtk.unit.Quantity(0, unit=k.unit)
+                self.harmonic_angle_force.setAngleParameters(i, p1, p2, p3, r0, k)
+        self.harmonic_angle_force.updateParametersInContext(self.simmd_mm.context)
         if len(self.custom_nonbonded_force) > 0:
             self.custom_nonbonded_force = self.custom_nonbonded_force[0]
         else:
@@ -275,13 +287,13 @@ class OpenMMInterface:
             self.custom_bond_force = [f for f in [self.system.getForce(i)
                                       for i in range(self.system.getNumForces())]
                                       if type(f) == openmm.CustomBondForce][0]
-        self.cm_motion_remover = [f for f in [self.system_mm.getForce(i)
-                                       for i in range(self.system_mm.getNumForces())]
-                                       if type(f) == openmm.CMMotionRemover][0]
+        #self.cm_motion_remover = [f for f in [self.system_mm.getForce(i)
+        #                               for i in range(self.system_mm.getNumForces())]
+        #                               if type(f) == openmm.CMMotionRemover][0]
         for i in range(self.system_mm.getNumForces()):
             f = self.system_mm.getForce(i)
             f.setForceGroup(i)
-        self.system_mm.removeForce(self.cm_motion_remover.getForceGroup())
+        #self.system_mm.removeForce(self.cm_motion_remover.getForceGroup())
         # Set long-range interaction method.
         self.nonbonded_force.setNonbondedMethod(openmm.NonbondedForce.PME)
         if self.custom_nonbonded_force:

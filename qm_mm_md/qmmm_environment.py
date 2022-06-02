@@ -16,9 +16,7 @@ import ase.md
 import ase.md.velocitydistribution as ase_md_veldist
 import ase.optimize
 
-sys.path.append("../qm_mm_md/")
-
-from qmmm_hamiltonian import *
+from .qmmm_hamiltonian import *
 
 
 class QMMMEnvironment:
@@ -112,8 +110,11 @@ class QMMMEnvironment:
         # Set initial simulation options.
         if temp_init is None:
             temp_init = temp
-        ase_md_veldist.MaxwellBoltzmannDistribution(self.atoms,
-                                                    temp_init * ase.units.kB)
+        ase_md_veldist.MaxwellBoltzmannDistribution(
+            self.atoms,
+            temp_init * ase.units.kB,
+            rng=np.random.default_rng(seed=42),
+        )
         if remove_translation:
             ase_md_veldist.Stationary(self.atoms)
         if remove_rotation:
