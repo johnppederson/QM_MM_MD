@@ -3,6 +3,7 @@
 """
 Psi4 interface to model the QM subsystem of the QM/MM system.
 """
+import sys
 import numpy as np
 import psi4
 import psi4.core
@@ -37,7 +38,7 @@ class Psi4Interface:
 
     def __init__(self, basis_set, functional, quadrature_spherical,
                  quadrature_radial, qm_charge, qm_spin, n_threads=1,
-                 read_guess=True):
+                 read_guess=False):
         self.basis = basis_set
         self.dft_functional = functional
         self.dft_spherical_points = quadrature_spherical
@@ -46,17 +47,17 @@ class Psi4Interface:
         self.qm_spin = qm_spin
         self.n_threads = n_threads
         self.read_guess = read_guess
-        self.wfn = None
+        self.wfn = False
         # Their is an opportunity to make qm_atoms_list a property.
         self.set_qm_atoms_list(None)
         self.set_ground_state_energy(None)
         psi4.set_num_threads(self.n_threads)
         # Set scf type to be density functional.
         self.scf_type = 'df'
-        psi4.set_options({'basis': self.basis,
-                          'dft_spherical_points': self.dft_spherical_points,
-                          'dft_radial_points': self.dft_radial_points,
-                          'scf_type': self.scf_type})
+        self.opts = {'basis': self.basis,
+                     'dft_spherical_points': self.dft_spherical_points,
+                     'dft_radial_points': self.dft_radial_points,
+                     'scf_type': self.scf_type}
 
     def generate_geometry(self, embedding_list, offsets, positions):
         """
@@ -74,26 +75,18 @@ class Psi4Interface:
             Array of atom positions from the ASE Atoms object.
         """
         # Check spin state of the QM molecule.
-        print("Setting charge and spin in QM calculations : ",
-              self.qm_charge, self.qm_spin)
         if self.qm_spin > 1:
            psi4.core.set_local_option('SCF', 'REFERENCE', 'UKS')
         # Set the field of electrostatically embedded charges.
-        charge_field = psi4.QMMM()
+        chargefield = []
         for residue, offset in zip(embedding_list, offsets):
             for atom in residue:
-                position = [positions[atom,k] + offset[k] for k in range(3)]
-                charge_field.extern.addCharge(self._charges[atom],
-                                              position[0],
-                                              position[1],
-                                              position[2])
-        psi4.core.set_global_option_python('EXTERN', charge_field.extern)
+                position = [(positions[atom,k] + offset[k])*1.88973 for k in range(3)]
+                chargefield.append([self._charges[atom],[position[0],position[1],position[2]]])
+        self.chargefield = chargefield
+        #psi4.core.set_global_option('PRINT', 5)
         # Construct geometry string.
-        geometrystring = ' \n '
-        geometrystring = (geometrystring + str(self.qm_charge) + " " 
-                          + str(self.qm_spin) + " \n")
-        # Do not reorient molecule.
-        geometrystring = geometrystring + " noreorient  \n  " + " nocom  \n  "
+        geometrystring = """\n"""
         qm_centroid = [sum([positions[i][k] for i in self._qm_atoms_list]) 
                        / len(self._qm_atoms_list) for k in range(3)]
         for atom in self._qm_atoms_list:
@@ -102,8 +95,11 @@ class Psi4Interface:
                               + str(self._chemical_symbols[atom]) + " " 
                               + str(position[0]) + " " 
                               + str(position[1]) + " " 
-                              + str(position[2]) + " \n")
-        geometrystring = geometrystring + ' symmetry c1 \n '
+                              + str(position[2]) + "\n")
+        geometrystring = (geometrystring + str(self.qm_charge) + " " 
+                          + str(self.qm_spin) + "\n")
+        # Do not reorient molecule.
+        geometrystring = geometrystring + "noreorient\nnocom\n"
         self.geometry = psi4.geometry(geometrystring)
 
     def generate_ground_state_energy(self, positions):
@@ -115,8 +111,27 @@ class Psi4Interface:
         position_array : Numpy array
             Array of atom positions from the ASE Atoms object.
         """
-        self.generate_geometry([], [], positions[self._qm_atoms_list])
-        self.set_ground_state_energy(psi4.optimize(self.dft_functional))
+        # Check spin state of the QM molecule.
+        if self.qm_spin > 1:
+           psi4.core.set_local_option('SCF', 'REFERENCE', 'UKS')
+        psi4.core.set_global_option('PRINT', 0)
+        # Construct geometry string.
+        geometrystring = """\n"""
+        for atom in self._qm_atoms_list:
+            position = positions[atom]
+            geometrystring = (geometrystring
+                              + str(self._chemical_symbols[atom]) + " " 
+                              + str(position[0]) + " " 
+                              + str(position[1]) + " " 
+                              + str(position[2]) + "\n")
+        geometrystring = (geometrystring + str(self.qm_charge) + " " 
+                          + str(self.qm_spin) + "\n")
+        # Do not reorient molecule.
+        geometrystring = geometrystring + "noreorient\nnocom\n"
+        geometry = psi4.geometry(geometrystring)
+        psi4.set_options(self.opts)
+        psi4_energy = psi4.optimize(self.dft_functional, molecule=geometry)
+        self.set_ground_state_energy(psi4_energy)
 
     def compute_energy(self):
         """
@@ -133,13 +148,37 @@ class Psi4Interface:
         psi4_forces: Numpy array
             Forces acting on QM atoms.
         """
+        psi4.set_options(self.opts)
         # Check for wavefunction if read_guess is True.
         if self.wfn and self.read_guess:
             self.wfn.to_file(self.wfn.get_scratch_filename(180))
             psi4.core.set_local_option('SCF', 'GUESS', 'READ')
-        (psi4_energy, psi4_wfn) = psi4.energy(self.dft_functional,
-                                              return_wfn=True)
-        psi4_forces = psi4.gradient(self.dft_functional)
+        if len(self.chargefield) == 0:
+            (psi4_energy, psi4_wfn) = psi4.energy(
+                self.dft_functional,
+                return_wfn=True,
+                molecule=self.geometry,
+                options=self.opts
+            )
+            psi4_forces = psi4.gradient(
+                self.dft_functional,
+                ref_wfn=psi4_wfn,
+                options=self.opts
+            )
+        else:
+            (psi4_energy, psi4_wfn) = psi4.energy(
+                self.dft_functional,
+                return_wfn=True,
+                external_potentials=self.chargefield,
+                molecule=self.geometry,
+                options=self.opts
+            )
+            psi4_forces = psi4.gradient(
+                self.dft_functional,
+                external_potentials=self.chargefield,
+                ref_wfn=psi4_wfn,
+                options=self.opts
+            )
         self.wfn = psi4_wfn
         # Convert energy to kJ/mol and forces to kJ/mol/Angstrom
         psi4_energy = (psi4_energy - self._ground_state_energy)*2625.5

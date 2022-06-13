@@ -16,9 +16,7 @@ import ase.md
 import ase.md.velocitydistribution as ase_md_veldist
 import ase.optimize
 
-sys.path.append("../qm_mm_md/")
-
-from qmmm_hamiltonian import *
+from .qmmm_hamiltonian import *
 
 
 class QMMMEnvironment:
@@ -112,8 +110,11 @@ class QMMMEnvironment:
         # Set initial simulation options.
         if temp_init is None:
             temp_init = temp
-        ase_md_veldist.MaxwellBoltzmannDistribution(self.atoms,
-                                                    temp_init * ase.units.kB)
+        ase_md_veldist.MaxwellBoltzmannDistribution(
+            self.atoms,
+            temp_init * ase.units.kB,
+            rng=np.random.default_rng(seed=42),
+        )
         if remove_translation:
             ase_md_veldist.Stationary(self.atoms)
         if remove_rotation:
@@ -158,10 +159,15 @@ class QMMMEnvironment:
                 and os.path.isfile(traj_file)):
             os.remove(log_file)
             os.remove(traj_file)
-        logger = ase.md.MDLogger(self.md, self.atoms, log_file,
-                                 stress=False, peratom=False, header=True,
-                                 mode="w")
-        self.md.attach(logger, interval=write_freq)
+        #logger = ase.md.MDLogger(self.md, self.atoms, log_file,
+        #                         stress=False, peratom=False, header=True,
+        #                         mode="w")
+        #self.md.attach(logger, interval=write_freq)
+        with open(log_file, "w") as fh:
+            fh.write("="*30 + "QM/MM/MD Log" + "="*30 + "\n")
+        self.logger = log_file
+        self.openmm_interface.logger = log_file
+        self.atoms.calc.logger = log_file
         self.openmm_interface.generate_reporter(traj_file)
 
     def write_atoms(self, name, ftype="xyz", append=False):

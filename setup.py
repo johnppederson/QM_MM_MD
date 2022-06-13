@@ -4,7 +4,7 @@ setup.py: Builds repository and distribution information.
 import setuptools
 
 __author__ = "Shahriar Khan and John Pederson"
-__version__ = "1.0"
+__version__ = "0.0.1"
 
 with open("README.md", "r") as fh:
     description = fh.read()
