@@ -85,6 +85,12 @@ class QMMMHamiltonian(ase.calculators.calculator.Calculator):
         self.openmm_interface.set_positions(atoms.get_positions())
         self.openmm_interface.embedding_list = self.embedding_list
         self.openmm_interface.delr_vector_list = self.delr_vector_list
+        with open(self.logger, "a") as fh:
+            fh.write("\n" + "-"*29 + "Frame " + "0"*(8-len(str(self.frame))) + str(self.frame) + "-"*29 + "\n")
+            category = "Kinetic Energy"
+            value = str(atoms.get_kinetic_energy()*96.4869)
+            left, right = value.split(".")
+            fh.write(category + ":" + " "*(31-len(left)-len(category)) + left + "." + right[0] + " kJ/mol\n")
         openmm_energy, openmm_forces = self.openmm_interface.compute_energy()
         psi4_energy, psi4_forces = self.psi4_interface.compute_energy()
         qm_forces = psi4_forces[0:len(self.qm_atoms_list),:]
@@ -96,25 +102,41 @@ class QMMMHamiltonian(ase.calculators.calculator.Calculator):
                 openmm_forces[i,j] += qm_force[j]
         # Remove double-counting from embedding forces and energy.
         j = 0
+        qm_centroid = [sum([atoms.positions[i][j] for i in self.qm_atoms_list])
+                       / len(self.qm_atoms_list) for j in range(3)]
+        dc_energy = 0.0
         for residue, offset in zip(self.embedding_list, self.delr_vector_list):
             for atom in residue:
-                print(len(self.embedding_list)*3)
                 co_forces = [0,0,0]
                 for i in self.qm_atoms_list:
-                    x = -atoms.positions[atom][0] + offset[0]
-                    y = -atoms.positions[atom][1] + offset[1]
-                    z = -atoms.positions[atom][2] + offset[2]
+                    x = (atoms.positions[atom][0] + offset[0] - (atoms.positions[i][0] - qm_centroid[0])) * 1.88973
+                    y = (atoms.positions[atom][1] + offset[1] - (atoms.positions[i][1] - qm_centroid[1])) * 1.88973
+                    z = (atoms.positions[atom][2] + offset[2] - (atoms.positions[i][2] - qm_centroid[2])) * 1.88973
                     dr = (x**2 + y**2 + z**2)**0.5
                     q_prod = atoms.charges[i] * atoms.charges[atom]
                     co_forces[0] += 1.88973 * 2625.5 * x * q_prod * dr**-3
                     co_forces[1] += 1.88973 * 2625.5 * y * q_prod * dr**-3
                     co_forces[2] += 1.88973 * 2625.5 * z * q_prod * dr**-3
-                    openmm_energy -= 2625.5 * q_prod * dr**-1
+                    dc_energy += 2625.5 * q_prod * dr**-1
                 for i in range(3):
                     openmm_forces[atom,i] += em_forces[j][i]
                     openmm_forces[atom,i] -= co_forces[i]
                 j += 1
-        openmm_energy += psi4_energy
+        with open(self.logger, "a") as fh:
+            category = "Psi4 Energy"
+            value = str(psi4_energy)
+            left, right = value.split(".")
+            fh.write(category + ":" + " "*(31-len(left)-len(category)) + left + "." + right[0] + " kJ/mol\n")
+            category = "Correction Energy"
+            value = str(-dc_energy)
+            left, right = value.split(".")
+            fh.write(category + ":" + " "*(31-len(left)-len(category)) + left + "." + right[0] + " kJ/mol\n")
+        openmm_energy += psi4_energy - dc_energy
+        with open(self.logger, "a") as fh:
+            category = "Total Energy"
+            value = str(atoms.get_kinetic_energy()*96.4869 + openmm_energy)
+            left, right = value.split(".")
+            fh.write(category + ":" + " "*(31-len(left)-len(category)) + left + "." + right[0] + " kJ/mol\n")
         self.frame += 1
         result["energy"] = openmm_energy * self.energy_units
         result["forces"] = openmm_forces * self.forces_units

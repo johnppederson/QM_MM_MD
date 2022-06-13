@@ -7,7 +7,7 @@ import numpy as np
 import openmm.app
 import openmm
 import simtk.unit
-
+import sys
 
 class OpenMMInterface:
     """
@@ -97,6 +97,52 @@ class OpenMMInterface:
             self.polarization = False
         self._platform = platform
 
+    def setup_system_lj_forces(self):
+        """
+        this sets up the force classes for QM/MM mechanical embedding,
+        which is done within system_lj
+
+        essentially, all irrelevant force classes are removed from the system
+        object, and the mechanical embedding is done by creating a
+        customnonbonded force with interaction groups between QM/MM
+        """
+        # first, remove all forces from system_lj ..
+        N_Forces = self.system_lj.getNumForces()
+        for i in range(N_Forces):
+            self.system_lj.removeForce(0)
+        # Interaction groups require atom indices to be input as sets.
+        qm_atoms_list = set(self._qm_atoms_list)
+        mm_atoms_list = set(self._mm_atoms_list)
+        # get sigma and epsilon LJ parameters for mechanical embedding
+        # if there is a CustomNonbondedForce and these are not in the NonbondedForce,
+        # code will have crashed out before call to this subroutine
+        sigma_list = []
+        eps_list = []
+        for i in self._all_atoms_list:
+            try:
+                (q, sig, eps) = self.nonbonded_force.getParticleParameters(i)
+            except:
+                print("Something went wrong with index %s" % i)
+            sigma_list.append(sig._value)
+            eps_list.append(eps._value)
+        # create a new CustomNonbondedForce for the mechanical embedding
+        custom_nonbonded_force = openmm.CustomNonbondedForce(
+            """4*epsilon*((sigma/r)^12-(sigma/r)^6);
+             sigma=0.5*(sigma1+sigma2);
+             epsilon=sqrt(epsilon1*epsilon2)""")
+        custom_nonbonded_force.addPerParticleParameter('epsilon')
+        custom_nonbonded_force.addPerParticleParameter('sigma')
+        custom_nonbonded_force.setNonbondedMethod(min(self.nonbonded_force.getNonbondedMethod(),
+                                                               openmm.NonbondedForce.CutoffPeriodic))
+        # add particles with LJ parameters
+        for i in self._all_atoms_list:
+            custom_nonbonded_force.addParticle([eps_list[i], sigma_list[i]])
+        # Mechanical embedding:  Interaction only between QM and MM atoms
+        custom_nonbonded_force.addInteractionGroup(qm_atoms_list, mm_atoms_list)
+        # Add force to system.
+        self.system_lj.addForce(custom_nonbonded_force)
+
+
     def create_subsystem(self):
         """
         Create the MM subsystem.
@@ -142,6 +188,28 @@ class OpenMMInterface:
                                                       nonbondedCutoff=self._nonbonded_cutoff,
                                                       constraints=None,
                                                       rigidWater=False)
+        # only save force objects internally for system_mm , we don't need to store force objects for system_lj
+        # which will only have a customnonbondedforce after modification
+        self.nonbonded_force = [f for f in [self.system_mm.getForce(i)
+                                for i in range(self.system_mm.getNumForces())]
+                                if type(f) == openmm.NonbondedForce][0]
+        self.custom_nonbonded_force = [f for f in [self.system_mm.getForce(i)
+                                       for i in range(self.system_mm.getNumForces())]
+                                       if type(f) == openmm.CustomNonbondedForce]
+        if not self.custom_nonbonded_force:
+            self.custom_nonbonded_force = None
+        else:
+           # crash out if CustomNonbondedForce exists, because setup_system_lj_forces cannot handle this ...
+           print( 'need to modify setup_system_lj_forces() in code in order to run simulation with a CustomNonbondedForce !')
+           sys.exit()
+        #  Set long-range interaction method, maybe fine to hard code these settings in as these should be used in anything but test cases ...
+        self.nonbonded_force.setNonbondedMethod(openmm.NonbondedForce.PME)
+        #self.nonbonded_force.setNonbondedMethod(openmm.NonbondedForce.CutoffNonPeriodic)
+        if self.custom_nonbonded_force:
+            self.custom_nonbonded_force.setNonbondedMethod(min(self.nonbonded_force.getNonbondedMethod(),
+                                                               openmm.NonbondedForce.CutoffPeriodic))
+        # Setup system_lj with appropriate forces for mechanical embedding
+        self.setup_system_lj_forces()
         self.platform = openmm.Platform.getPlatformByName(self._platform)
         self.simmd_mm = openmm.app.Simulation(self.modeller.topology,
                                               self.system_mm,
@@ -153,109 +221,13 @@ class OpenMMInterface:
                                               self.integrator_lj,
                                               self.platform)
         self.simmd_lj.context.setPositions(self.modeller.positions)
-        # Get force types and set method for the Lennard-Jones subsubsystem.
-        self.harmonic_bond_force = [f for f in [self.system_lj.getForce(i)
-                                    for i in range(self.system_lj.getNumForces())]
-                                    if type(f) == openmm.HarmonicBondForce][0]
-        self.harmonic_angle_force = [f for f in [self.system_lj.getForce(i)
-                                     for i in range(self.system_lj.getNumForces())]
-                                     if type(f) == openmm.HarmonicAngleForce][0]
-        self.nonbonded_force = [f for f in [self.system_lj.getForce(i)
-                                for i in range(self.system_lj.getNumForces())]
-                                if type(f) == openmm.NonbondedForce][0]
-        self.custom_nonbonded_force = [f for f in [self.system_lj.getForce(i)
-                                       for i in range(self.system_lj.getNumForces())]
-                                       if type(f) == openmm.CustomNonbondedForce]
-        if len(self.custom_nonbonded_force) > 0:
-            self.custom_nonbonded_force = self.custom_nonbonded_force[0]
-        else:
-            self.custom_nonbonded_force = None
-        self.custom_bond_force = [f for f in [self.system_lj.getForce(i)
-                                  for i in range(self.system_lj.getNumForces())]
-                                  if type(f) == openmm.CustomBondForce]
-        if len(self.custom_bond_force) > 0:
-            self.custom_bond_force = self.custom_bond_force[0]
-        else:
-            self.custom_bond_force = None
-        # Interaction groups require atom indices to be input as sets.
-        qm_atoms_list = set(self._qm_atoms_list)
-        mm_atoms_list = set(self._mm_atoms_list)
-        # Cutoff the forces.
-        for i in range(self.harmonic_bond_force.getNumBonds()):
-            p1, p2, r0, k = self.harmonic_bond_force.getBondParameters(i)
-            if p1 in self._all_atoms_list or p2 in self._all_atoms_list:
-                k = simtk.unit.Quantity(0, unit=k.unit)
-                self.harmonic_bond_force.setBondParameters(i, p1, p2, r0, k)
-        self.harmonic_bond_force.updateParametersInContext(self.simmd_lj.context)
-        for i in range(self.harmonic_angle_force.getNumAngles()):
-            p1, p2, p3, r0, k = self.harmonic_angle_force.getAngleParameters(i)
-            if p1 in self._all_atoms_list or p2 in _all_atoms_list or p3 in self._all_atoms_list:
-                k = simtk.unit.Quantity(0, unit=k.unit)
-                self.harmonic_angle_force.setAngleParameters(i, p1, p2, p3, r0, k)
-        self.harmonic_angle_force.updateParametersInContext(self.simmd_lj.context)
-        if self.custom_bond_force:
-            for i in range(self.custom_bond_force.getNumBonds()):
-                p1, p2, parms = self.custom_bond_force.getBondParameters(i)
-                if p1 not in self._all_atoms_list or p2 not in self._all_atoms_list:
-                    self.custom_bond_force.setBondParameters(i, p1, p2, (0.0, 0.1, 10.0))
-                p1, p2, parms = self.custom_bond_force.getBondParameters(i)
-            self.custom_bond_force.updateParametersInContext(self.simmd_lj.context)
-        sigma_list = []
-        eps_list = []
-        for i in self._all_atoms_list:
-            try:
-                (q, sig, eps) = self.nonbonded_force.getParticleParameters(i)
-            except:
-                print("Something went wrong with index %s" % i)
-            sigma_list.append(sig._value)
-            eps_list.append(eps._value)
-            self.nonbonded_force.setParticleParameters(i, 0.0, 0.0, 0.0)
-        for i in range(self.system_lj.getNumForces()):
-            f = self.system_lj.getForce(i)
-            f.setForceGroup(i)
-        if self.custom_nonbonded_force:
-            self.system_lj.removeForce(self.custom_nonbonded_force.getForceGroup())
-        self.custom_nonbonded_force = openmm.CustomNonbondedForce(
-            """4*epsilon*((sigma/r)^12-(sigma/r)^6);
-             sigma=0.5*(sigma1+sigma2);
-             epsilon=sqrt(epsilon1*epsilon2)""")
-        self.custom_nonbonded_force.addPerParticleParameter('epsilon')
-        self.custom_nonbonded_force.addPerParticleParameter('sigma')
-        self.nonbonded_method = min(self.nonbonded_force.getNonbondedMethod(),
-                                    openmm.NonbondedForce.CutoffPeriodic)
-        self.system_lj.removeForce(self.nonbonded_force.getForceGroup())
-        # Add force to system.
-        self.system_lj.addForce(self.custom_nonbonded_force)
-        for i in self._all_atoms_list:
-            self.custom_nonbonded_force.addParticle([eps_list[i], sigma_list[i]])
-        self.custom_nonbonded_force.addInteractionGroup(qm_atoms_list, mm_atoms_list)
-        self.custom_nonbonded_force.setNonbondedMethod(self.nonbonded_method)
-        # Lastly, reinitialize context to incorporate new force class.
-        state = self.simmd_lj.context.getState(getEnergy=False,
-                                               getForces=True,
-                                               getVelocities=False,
-                                               getPositions=True)
-        positions = state.getPositions()
-        self.simmd_lj.context.reinitialize()
-        self.simmd_lj.context.setPositions(positions)
-        # We need to reset force groups after adding new
-        # custom_nonbonded_force object.
-        for i in range(self.system_lj.getNumForces()):
-            f = self.system_lj.getForce(i)
-            f.setForceGroup(i) 
-        # Get force types and set method for the standard MM subsystem.
+        # Remove double-counted intramolecular interactions for QM subsystem.
         self.harmonic_bond_force = [f for f in [self.system_mm.getForce(i)
                                     for i in range(self.system_mm.getNumForces())]
                                     if type(f) == openmm.HarmonicBondForce][0]
         self.harmonic_angle_force = [f for f in [self.system_mm.getForce(i)
                                      for i in range(self.system_mm.getNumForces())]
                                      if type(f) == openmm.HarmonicAngleForce][0]
-        self.nonbonded_force = [f for f in [self.system_mm.getForce(i)
-                                for i in range(self.system_mm.getNumForces())]
-                                if type(f) == openmm.NonbondedForce][0]
-        self.custom_nonbonded_force = [f for f in [self.system_mm.getForce(i)
-                                       for i in range(self.system_mm.getNumForces())]
-                                       if type(f) == openmm.CustomNonbondedForce]
         for i in range(self.harmonic_bond_force.getNumBonds()):
             p1, p2, r0, k = self.harmonic_bond_force.getBondParameters(i)
             if p1 in self._qm_atoms_list or p2 in self._qm_atoms_list:
@@ -268,45 +240,15 @@ class OpenMMInterface:
                 k = simtk.unit.Quantity(0, unit=k.unit)
                 self.harmonic_angle_force.setAngleParameters(i, p1, p2, p3, r0, k)
         self.harmonic_angle_force.updateParametersInContext(self.simmd_mm.context)
-        if len(self.custom_nonbonded_force) > 0:
-            self.custom_nonbonded_force = self.custom_nonbonded_force[0]
-        else:
-            self.custom_nonbonded_force = None
-        self.custom_bond_force = [f for f in [self.system_mm.getForce(i)
-                                  for i in range(self.system_mm.getNumForces())]
-                                  if type(f) == openmm.CustomBondForce]
-        if len(self.custom_bond_force) > 0:
-            self.custom_bond_force = self.custom_bond_force[0]
-        else:
-            self.custom_bond_force = None
-        if self.polarization:
-            self.drude_force = [f for f in [self.system.getForce(i)
-                                for i in range(self.system.getNumForces())]
-                                if type(f) == openmm.DrudeForce][0]
-            # This will exist only for certain molecules.
-            self.custom_bond_force = [f for f in [self.system.getForce(i)
-                                      for i in range(self.system.getNumForces())]
-                                      if type(f) == openmm.CustomBondForce][0]
-        #self.cm_motion_remover = [f for f in [self.system_mm.getForce(i)
-        #                               for i in range(self.system_mm.getNumForces())]
-        #                               if type(f) == openmm.CMMotionRemover][0]
+        # Set force groups for system_mm
         for i in range(self.system_mm.getNumForces()):
             f = self.system_mm.getForce(i)
             f.setForceGroup(i)
-        #self.system_mm.removeForce(self.cm_motion_remover.getForceGroup())
-        # Set long-range interaction method.
-        self.nonbonded_force.setNonbondedMethod(openmm.NonbondedForce.PME)
-        if self.custom_nonbonded_force:
-            self.custom_nonbonded_force.setNonbondedMethod(min(self.nonbonded_force.getNonbondedMethod(),
-                                                               openmm.NonbondedForce.CutoffPeriodic))
-        # Collect list of non-drude atoms and their masses.
-        state = self.simmd_mm.context.getState(getEnergy=False,
-                                               getForces=True,
-                                               getVelocities=False,
-                                               getPositions=True)
-        positions = state.getPositions()
-        self.simmd_mm.context.reinitialize()
-        self.simmd_mm.context.setPositions(positions)
+        # Set force groups for system_lj
+        for i in range(self.system_lj.getNumForces()):
+            f = self.system_lj.getForce(i)
+            f.setForceGroup(i) 
+       # store masses/charges
         masses = []
         charges = []
         for i in range(self.system_mm.getNumParticles()):
@@ -316,10 +258,6 @@ class OpenMMInterface:
                 charges.append(q._value)
         self._masses = masses
         self._charges = charges
-        # We need to reset force groups.
-        for i in range(self.system_mm.getNumForces()):
-            f = self.system_mm.getForce(i)
-            f.setForceGroup(i) 
         # Drude support will be added in future versions of the code.
         #if self.polarization:
         #    self.generate_drude_pairs()
@@ -419,11 +357,19 @@ class OpenMMInterface:
         self.mm_forces = mm_forces
         self.simmd_mm.reporters[0].report(self.simmd_mm, state)
         # Uncomment to see breakdown of energy by force group
-        print("MM System Forces:")
-        for i in range(self.system_mm.getNumForces()):
-            f = self.system_mm.getForce(i)
-            print(type(f), str(self.simmd_mm.context.getState(getEnergy=True, groups=i).getPotentialEnergy()), flush=True)
-            print(type(f), str(self.simmd_mm.context.getState(getEnergy=True, groups=i).getKineticEnergy()), flush=True)
+        #print("MM System Forces:")
+        with open(self.logger, "a") as fh:
+            category = "OpenMM Energy"
+            value = str(mm_energy)
+            left, right = value.split(".")
+            fh.write(category + ":" + " "*(31-len(left)-len(category)) + left + "." + right[0] + " kJ/mol\n")
+            for i in range(self.system_mm.getNumForces()):
+                f = self.system_mm.getForce(i)
+                category = str(type(f)).split("openmm.openmm.")[1].split("\'")[0]
+                value = str(self.simmd_mm.context.getState(getEnergy=True, groups=2**i).getPotentialEnergy()._value)
+                left, right = value.split(".")
+                fh.write("|_" + category + ":" + " "*(29-len(left)-len(category)) + left + "." + right[0] + " kJ/mol\n")
+                #print(type(f), str(self.simmd_mm.context.getState(getEnergy=True, groups=2**i).getPotentialEnergy()), flush=True)
 
     def compute_lj_energy(self):
         """
@@ -452,11 +398,10 @@ class OpenMMInterface:
         self.lj_energy = lj_energy
         self.lj_forces = lj_forces
         # Uncomment to see breakdown of energy by force group
-        print("LJ System Forces")
-        for i in range(self.system_lj.getNumForces()):
-            f = self.system_lj.getForce(i)
-            print(type(f), str(self.simmd_lj.context.getState(getEnergy=True, groups=i).getPotentialEnergy()), flush=True)
-            print(type(f), str(self.simmd_lj.context.getState(getEnergy=True, groups=i).getKineticEnergy()), flush=True)
+        #print("LJ System Forces")
+        #for i in range(self.system_lj.getNumForces()):
+        #    f = self.system_lj.getForce(i)
+        #    print(type(f), str(self.simmd_lj.context.getState(getEnergy=True, groups=2**i).getPotentialEnergy()), flush=True)
 
     def compute_energy(self):
         """
@@ -471,9 +416,6 @@ class OpenMMInterface:
         """
         self.compute_mm_energy()
         self.compute_lj_energy()
-        print("forces...")
-        print(self.mm_forces)
-        print(self.lj_forces)
         # Putting force into kJ/mol/Angstrom for ASE to process.
         openmm_energy = self.mm_energy
         openmm_forces = np.add(self.mm_forces, self.lj_forces) / 10.0
@@ -490,7 +432,8 @@ class OpenMMInterface:
         """
         self.simmd_mm.reporters = []
         self.simmd_mm.reporters.append(
-            openmm.app.DCDReporter(name, 2))
+            openmm.app.DCDReporter(name, 2),
+        )
 
     def get_charges(self):
         """
